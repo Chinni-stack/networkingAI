@@ -93,7 +93,7 @@ async function directory({ starred = 0, company = '', head = '', title = 'People
     <select id="b" aria-label="Experience">${B.map(b => `<option value="${esc(b)}" ${S.band === b ? 'selected' : ''}>${b ? b + ' yrs' : 'All experience'}</option>`).join('')}</select>
     <select id="d" aria-label="Domain"><option value="">All domains</option>${meta.domains.map(d => `<option ${S.domain === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>
     <select id="s" aria-label="Sort">${[['yoe', 'Most experienced'], ['recent', 'Recently connected'], ['name', 'Name A–Z'], ['company', 'Company A–Z']].map(([v, l]) => `<option value="${v}" ${S.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
-    <button class="chip ${S.ai ? 'on' : ''}" id="ai">AI only</button><button class="chip ${S.product ? 'on' : ''}" id="pr">Product</button></div>
+    <button class="chip ${S.ai ? 'on' : ''}" id="ai">AI only</button><button class="chip ${S.product ? 'on' : ''}"    id="pr">Product</button><button class="chip ${S.has_email ? 'on' : ''}" id="em">Has email</button><select id="sn" aria-label="Connected since"><option value="">Any time</option>${[2025, 2024, 2022, 2020].map(y => `<option value="${y}" ${S.since == y ? 'selected' : ''}>Since ${y}</option>`).join('')}</select></div>
     <div id="list"></div><div class="pager" id="pager"></div>`;
   const qs = () => new URLSearchParams({ ...S, starred: starred ? 1 : '', company }).toString(), segs = () => $$('.seg button').forEach(b => b.classList.toggle('on', b.dataset.v === V));
   const load = async () => {

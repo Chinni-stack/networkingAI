@@ -6,7 +6,11 @@ const COLS = 'id,name,url,email,company,position,connected_on,yoe::float yoe,yoe
 function where(q) {
   const w = [], p = [], add = (sql, v) => { p.push(v); w.push(sql.replace('?', () => '$' + p.length)); };
   if (q.ai === '1') w.push('is_ai'); if (q.product === '1') w.push('is_product'); if (q.starred === '1') w.push('starred');
+  if (q.has_email === '1') w.push("email<>''");
   if (q.band) add('band = ?', q.band); if (q.domain) add('domain = ?', q.domain); if (q.company) add('company = ?', q.company);
+  if (q.bands) add('band = ANY(?)', String(q.bands).split(',')); // multi-select experience bands
+  if (+q.since) add('connected_on >= ?::date', `${+q.since}-01-01`);
+  if (+q.yoe_min) add('yoe >= ?', +q.yoe_min);
   if (q.q) { p.push('%' + q.q + '%'); w.push(`(name ILIKE $${p.length} OR company ILIKE $${p.length} OR position ILIKE $${p.length})`); }
   return { sql: 'WHERE ' + (w.join(' AND ') || 'TRUE'), p };
 }
@@ -17,7 +21,7 @@ router.post('/import', h(async (q, s) => {
   const k = f => rows.map(f), c = await db.connect();
   try {
     await c.query('BEGIN');
-    const kept = (await c.query("SELECT url FROM connections WHERE starred AND url<>''")).rows.map(o => o.url); // keep shortlist across re-imports
+    const kept = (await c.query("SELECT url FROM connections WHERE starred AND url<>''")).rows.map(o => o.url);
     await c.query('TRUNCATE connections RESTART IDENTITY');
     await c.query(`INSERT INTO connections(name,url,email,company,position,connected_on,yoe,yoe_source,band,domain,is_ai,is_product)
       SELECT * FROM unnest($1::text[],$2::text[],$3::text[],$4::text[],$5::text[],$6::date[],$7::numeric[],$8::text[],$9::text[],$10::text[],$11::bool[],$12::bool[])`,
@@ -57,6 +61,18 @@ router.get('/people', h(async (q, s) => {
     db.query(`SELECT ${COLS} FROM connections ${w.sql} ORDER BY ${SORT[q.query.sort] || SORT.yoe}, id LIMIT ${lim} OFFSET ${(page - 1) * lim}`, w.p),
     db.query(`SELECT count(*)::int n FROM connections ${w.sql}`, w.p)]);
   s.json({ rows: rows.rows, total: tot.rows[0].n, pages: Math.max(Math.ceil(tot.rows[0].n / lim), 1) });
+}));
+
+// Best profiles: score = seniority + AI + product company + reachable email + keyword fit with the target role + target-company match
+router.get('/best', h(async (q, s) => {
+  const w = where(q.query), p = w.p, Q = q.query;
+  const kw = String(Q.role || '').toLowerCase().split(/[^a-z0-9+#.]+/).filter(x => x.length > 2).slice(0, 6);
+  const fit = kw.map(k => { p.push('%' + k + '%'); return `+CASE WHEN position ILIKE $${p.length} THEN 12 WHEN company ILIKE $${p.length} THEN 6 ELSE 0 END`; }).join('');
+  let tc = ''; if (Q.target) { p.push('%' + String(Q.target).slice(0, 80) + '%'); tc = `+CASE WHEN company ILIKE $${p.length} THEN 35 ELSE 0 END`; }
+  const score = `(CASE band WHEN '10+' THEN 40 WHEN '8-10' THEN 32 WHEN '6-8' THEN 24 WHEN '5-6' THEN 16 ELSE 8 END
+    +CASE WHEN is_ai THEN 12 ELSE 0 END+CASE WHEN is_product THEN 8 ELSE 0 END+CASE WHEN email<>'' THEN 4 ELSE 0 END ${fit} ${tc})::int`;
+  const { rows } = await db.query(`SELECT ${COLS}, ${score} score FROM connections ${w.sql} ORDER BY score DESC, yoe DESC, id LIMIT ${Math.min(parseInt(Q.limit) || 12, 30)}`, p);
+  s.json(rows);
 }));
 
 router.post('/people/:id/star', h(async (q, s) => {
